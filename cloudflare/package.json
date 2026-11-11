@@ -1,0 +1,19 @@
+{
+  "name": "ratchet-edge",
+  "version": "0.3.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Ratchet on Cloudflare: the front Worker and the two container supervisors. Tooling only; nothing here ships in the container image.",
+  "scripts": {
+    "typecheck": "wrangler types src/worker-configuration.d.ts >/dev/null && tsc -p tsconfig.json --noEmit",
+    "lint": "npm run typecheck && wrangler deploy --dry-run --env=\"\" --containers-rollout none --outdir .wrangler/dry-run && wrangler deploy --dry-run --env staging --containers-rollout none --outdir .wrangler/dry-run-staging",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.8.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.12",
+    "wrangler": "4.160.1"
+  }
+}

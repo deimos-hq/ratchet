@@ -97,3 +97,40 @@ jobs:
         # A vulnerable production dependency should fail the build; a vulnerable
         # dev tool should not stop a release at midnight.
         run: npm run audit
+
+  edge:
+    # The Cloudflare front Worker and the two container supervisors
+    # (cloudflare/). Separate from the suite above because it is a separate
+    # package with its own lockfile: the Worker's tooling must not become a
+    # dependency of the application, whose production tree is nine packages on
+    # purpose.
+    #
+    # The tests run inside workerd — the runtime the Worker is deployed on —
+    # and need no Docker and no Cloudflare credentials. Nothing here deploys.
+    name: edge (Cloudflare Worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck, and build both environments without deploying
+        # `--dry-run --containers-rollout none`: Wrangler validates
+        # wrangler.toml and bundles the Worker for production and for staging,
+        # uploads nothing, and does not build the container image (the suite
+        # above already proves the image's contents; building it here would
+        # need the registry).
+        run: npm run lint
+
+      - name: Front Worker tests
+        run: npm test
