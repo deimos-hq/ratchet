@@ -33,7 +33,14 @@
   <div class="wrap narrow legal">
     <p class="eyebrow">Privacy</p>
     <h1>What we store, and what we refuse to</h1>
-    <p class="meta">Last updated 31 August 2026</p>
+    <!-- STAGED FOR THE CLOUDFLARE CUTOVER. The hosting facts on this page (who
+         processes it, where it lives, backups, the transit paragraph) describe the
+         service AS IT WILL BE once it is served from Cloudflare. They are not true
+         of the Fly deployment. This build must not be deployed anywhere else, and
+         scripts/deploy-cf.sh refuses production while any CUTOVER-TODO remains.
+         docs/handoff/CUTOVER_CLOUDFLARE.md §2 lists what to fill in. -->
+    <!-- CUTOVER-TODO: set this to the cutover date. -->
+    <p class="meta">Last updated 11 November 2026</p>
 
     <p class="lede">
       Ratchet decides whether an agent may perform a side effect. Doing that well needs
@@ -57,6 +64,17 @@
     <p>
       <strong>API keys in a recoverable form.</strong> Keys are stored as an HMAC-SHA256 digest
       under a server-side pepper. A copy of our database does not yield a usable key.
+    </p>
+    <p class="dim">
+      <strong>Not storing something is not the same as nobody seeing it.</strong> Your request
+      reaches us through Cloudflare, which ends the TLS connection at its edge and passes the
+      request to our application inside its network. So the payload and the API key are
+      visible to Cloudflare's systems while the request is in transit, even though neither is
+      stored by us and neither is written to a log: per-request logging on the Cloudflare side
+      is switched off, and our own logger redacts credentials and never records a body.
+      Cloudflare keeps its own operational records of the traffic it carries, under its own
+      privacy policy, and we do not control those. Until 11 November 2026 nothing sat in that
+      position; the <a href="/security#tls">security page</a> says what changed and why.
     </p>
 
     <h2>What we do store</h2>
@@ -90,19 +108,30 @@
         inactivity</strong>, unless claimed. Using one resets the clock; claiming it with an
         email makes it a normal workspace that is never swept. An unclaimed workspace you
         stop using is removed along with its effects and receipts.</li>
-      <li><strong>Backups</strong> — database snapshots retained 30 days; logical backups stored
-        off-machine.</li>
+<!-- CUTOVER-TODO: state the provider's point-in-time-recovery window once the
+           provider is chosen, and confirm the 30-day lifecycle rule exists on the R2 bucket. -->
+      <li><strong>Backups</strong> — the database provider keeps point-in-time recovery data;
+        a nightly logical backup is restored and verified, then stored off the database
+        provider (Cloudflare R2) for 30 days.</li>
     </ul>
 
     <h2>Who else processes it</h2>
     <div class="table-scroll">
       <table>
       <tr><th>Processor</th><th>Purpose</th><th>Where</th></tr>
-      <tr><td>Fly.io</td><td>Application hosting and database</td><td>United States</td></tr>
-      <tr><td>Tigris</td><td>Encrypted database backups</td><td>United States</td></tr>
+      <tr><td>Cloudflare</td><td>Application hosting (Workers and Containers), TLS
+        termination, DNS, inbound email routing, database backups (R2)</td><td>Global network;
+        see below</td></tr>
+      <!-- CUTOVER-TODO: name the managed Postgres provider and its region. It is not chosen yet. -->
+      <tr><td>Database provider (to be named)</td><td>Managed Postgres database</td><td>United States</td></tr>
       <tr><td>Stripe</td><td>Card payments</td><td>United States / global</td></tr>
       <tr><td>Resend</td><td>Transactional email</td><td>United States</td></tr>
-      <tr><td>Cloudflare</td><td>DNS and inbound email routing</td><td>Global</td></tr>
+      <!-- CUTOVER-TODO: replace both dates with the real ones, and delete these two rows
+           once the Fly database and the Tigris bucket are gone. -->
+      <tr><td>Fly.io</td><td>Previous host. Holds the previous copy of the database until it
+        is deleted (date to be set)</td><td>United States</td></tr>
+      <tr><td>Tigris</td><td>Previous backup store. Holds backups taken before the move until
+        they expire (date to be set)</td><td>United States</td></tr>
     </table>
     </div>
     <p class="dim">
@@ -112,7 +141,12 @@
 
     <h2>Where it lives</h2>
     <p>
-      All application data is stored in the United States (Fly.io, region <code>sjc</code>).
+<!-- CUTOVER-TODO: name the database provider and region here too. -->
+      All application data is stored in one database in the United States. It is
+      <em>processed</em> on Cloudflare's network: your TLS connection ends at the Cloudflare
+      location nearest you, which may be outside the United States, and the application runs
+      in containers that Cloudflare places. We ask for North America; the platform does not
+      currently let us require it, so we do not promise it.
       <strong>There is currently no EU-resident option.</strong> If your obligations require
       EU residency, Ratchet does not meet them today, and we would rather say so than let you
       find out later.

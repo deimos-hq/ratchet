@@ -1,0 +1,167 @@
+# Ratchet on Cloudflare: one Worker, two container classes, one image.
+#
+#   npm run deploy:cf:staging     # here first
+#   npm run deploy:cf             # then production, through the four gates
+#
+# NAMES ONLY. No secret has a value in this file or anywhere in the repository.
+# Secrets are set once per environment with `wrangler secret put <NAME>`; the
+# list, and which of them reach the containers, is cloudflare/src/env.ts.
+#
+#   required:  DATABASE_URL  AUTH_SECRET
+#   optional:  AUTH_SECRET_RETIRED  DIMENSION_SECRET  STRIPE_SECRET_KEY
+#              STRIPE_WEBHOOK_SECRET  EMAIL_API_KEY  METRICS_TOKEN
+#              X402_FACILITATOR_KEY  OPS_TOKEN (Worker only; guards /__ops/status)
+#
+# The top level is PRODUCTION. Staging is [env.staging] below and repeats every
+# binding, because Wrangler does not inherit bindings, vars or containers into
+# a named environment.
+
+name = "ratchet-gate"
+main = "src/index.ts"
+account_id = "9e323bb9ed90873eb75acb39171cf6dc"
+compatibility_date = "2026-11-01"
+upload_source_maps = true
+
+# ratchetgate.com and www.ratchetgate.com are NOT listed here on purpose. They
+# are attached by scripts/deploy-cf.sh (`--domain`), so that the first
+# production deploy can be checked on workers.dev before the public hostname
+# points at it. See docs/handoff/CUTOVER_CLOUDFLARE.md.
+workers_dev = true
+preview_urls = false
+
+# Logs: the supervisors' own lines and the containers' stdout — which is the
+# application's logger, with its redaction list (CLAUDE.md §5.8).
+#
+# INVOCATION LOGS ARE OFF, and must stay off. With them on, Cloudflare records
+# a log entry per request "containing details such as the Request, Response
+# and related metadata" on a platform this repository does not control. The
+# application goes to some length never to log an Authorization header, an
+# X-Api-Key or a Stripe signature; a per-request platform log in front of it
+# would be a second logger that never read that rule. A test fails if this
+# line goes missing (test/unit/cloudflare-config.test.ts).
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+# The backstop supervisor. See `scheduled` in src/index.ts.
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+NODE_ENV = "production"
+PORT = "8787"
+HOST = "0.0.0.0"
+PUBLIC_URL = "https://ratchetgate.com"
+# Direct TLS to the managed database, certificate verified (src/db/pool.ts sets
+# rejectUnauthorized: true whenever this is on). Do not add `sslmode=no-verify`
+# to DATABASE_URL: a connection-string parameter is a quieter way to switch the
+# verification back off.
+DB_SSL = "true"
+# 0 = "the operator has not said how many standbys to expect", so /workerz
+# reports replication as unobserved instead of ok. That is the truthful answer
+# on a managed database whose replicas this application cannot see. Fly ran
+# with 2; see KNOWN_LIMITATIONS §4.
+EXPECTED_REPLICAS = "0"
+
+[[containers]]
+class_name = "ApiContainer"
+scheduling_policy = "durable_object"
+
+[containers.images.base]
+dockerfile = "../Dockerfile"
+build_context = ".."
+
+[[containers]]
+class_name = "WorkerContainer"
+scheduling_policy = "durable_object"
+
+[containers.images.base]
+dockerfile = "../Dockerfile"
+build_context = ".."
+
+[[durable_objects.bindings]]
+name = "API"
+class_name = "ApiContainer"
+
+[[durable_objects.bindings]]
+name = "WORKER"
+class_name = "WorkerContainer"
+
+[exports.ApiContainer]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.WorkerContainer]
+type = "durable-object"
+storage = "sqlite"
+
+# ─────────────────────────────────────────────────────────────── staging ──
+# Different in the same three ways fly.staging.toml was, for the same reasons:
+# its own AUTH_SECRET (a key minted here is worthless in production), no
+# payment or chain credentials, and EMAIL_PROVIDER=log. Its DATABASE_URL must
+# name a database whose role has no rights on production's.
+
+[env.staging]
+name = "ratchet-gate-staging"
+workers_dev = true
+preview_urls = false
+
+[env.staging.triggers]
+crons = ["* * * * *"]
+
+[env.staging.vars]
+NODE_ENV = "production"
+RATCHET_ENV = "staging"
+PORT = "8787"
+HOST = "0.0.0.0"
+# Replace <subdomain> with the account's workers.dev subdomain before the first
+# staging deploy. It is the OAuth issuer, so it has to be the real URL.
+# scripts/deploy-cf.sh refuses to deploy while the placeholder is here.
+PUBLIC_URL = "https://ratchet-gate-staging.<subdomain>.workers.dev"
+DB_SSL = "true"
+EXPECTED_REPLICAS = "0"
+EMAIL_PROVIDER = "log"
+BILLING_PROVIDER = "test"
+
+[[env.staging.containers]]
+class_name = "ApiContainer"
+scheduling_policy = "durable_object"
+
+[env.staging.containers.images.base]
+dockerfile = "../Dockerfile"
+build_context = ".."
+
+[[env.staging.containers]]
+class_name = "WorkerContainer"
+scheduling_policy = "durable_object"
+
+[env.staging.containers.images.base]
+dockerfile = "../Dockerfile"
+build_context = ".."
+
+[[env.staging.durable_objects.bindings]]
+name = "API"
+class_name = "ApiContainer"
+
+[[env.staging.durable_objects.bindings]]
+name = "WORKER"
+class_name = "WorkerContainer"
+
+[env.staging.exports.ApiContainer]
+type = "durable-object"
+storage = "sqlite"
+
+[env.staging.exports.WorkerContainer]
+type = "durable-object"
+storage = "sqlite"
+
+# Not inherited, so stated again. See the note on [observability] above.
+[env.staging.observability]
+enabled = true
+
+[env.staging.observability.logs]
+enabled = true
+invocation_logs = false

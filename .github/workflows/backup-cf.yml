@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Deimos AI LLC
+#
+# The Cloudflare variant of backup.yml: dump the managed Postgres directly with
+# a read-only backup role, restore it, verify every receipt, upload to R2.
+#
+# MANUAL ONLY until the cutover. It has no schedule on purpose: before the
+# cutover its secrets do not exist, and a nightly job that fails every night
+# teaches everyone to ignore the backup alert. docs/handoff/CUTOVER_CLOUDFLARE.md
+# §6 is the step that adds `schedule:` here and removes it from backup.yml —
+# in that order, after one green manual run.
+#
+# Secrets it reads (names only; none exist yet, and this workflow creates none):
+#   BACKUP_DATABASE_URL    direct endpoint, read-only role — NOT the app's URL
+#   R2_ACCOUNT_ID  R2_BUCKET  R2_ACCESS_KEY_ID  R2_SECRET_ACCESS_KEY
+name: backup (Cloudflare)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: backup-cf
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Refuse to run outside the default branch
+        # It dumps production and holds the credentials to do so, and
+        # workflow_dispatch can target any ref — so branch code must not reach
+        # these secrets.
+        if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          echo "This workflow only runs on ${{ github.event.repository.default_branch }}."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Dump, restore, verify, upload
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BASE: https://ratchetgate.com
+        run: |
+          set -euo pipefail
+          npm run backup:verify:r2
+
+      - name: Snapshot the repository beside the data
+        # scripts/snapshot-code.sh uploads through scripts/s3-put.mjs, which
+        # reads TIGRIS_* names; R2 speaks the same protocol.
+        env:
+          TIGRIS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          TIGRIS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          TIGRIS_BUCKET: ${{ secrets.R2_BUCKET }}
+          TIGRIS_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          export TIGRIS_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          git fetch --unshallow 2>/dev/null || true
+          npm run snapshot:code
+
+      - name: Summary
+        if: success()
+        run: echo "Backup dumped, restored, cryptographically verified, and uploaded to R2." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report failure loudly
+        if: failure()
+        run: |
+          {
+            echo "## Backup (Cloudflare) FAILED"
+            echo
+            echo "No fresh off-machine copy was made by this run. The most recent"
+            echo "verified backup is whatever the last green run produced."
+          } >> "$GITHUB_STEP_SUMMARY"

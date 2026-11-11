@@ -264,6 +264,22 @@ dangerous in production.
   recovery. See `docs/handoff/KNOWN_LIMITATIONS.md` §4.
 - Migrations run on boot behind an advisory lock, so several instances may start at once. The
   worker sets `MIGRATE_ON_BOOT=false` in compose and defers to the API.
+- **Staged 11 Nov 2026 — the hosted service is moving from Fly to Cloudflare** (owner's decision;
+  `docs/handoff/DECISIONS.md` D23, reversed). Until the cutover the lines above describe the Fly
+  deployment, which is offline. After it:
+  - The control plane and the worker are two **Cloudflare Containers** from the one image, each
+    owned by a Durable Object in `cloudflare/`. The worker is still a long-running process — the
+    rule above is not relaxed — but Cloudflare does not promise to keep a container up, so a
+    supervisor (alarm every 60 s, cron backstop every minute) restarts it. Do not replace the
+    worker container with a cron-invoked function: that is the mistake this section names.
+  - A **front Worker** sits in front of the API. It must stay a pass-through: it overwrites
+    `X-Forwarded-For` with `CF-Connecting-IP` (the app trusts the leftmost entry for rate limits
+    and keyless provisioning), never redirects a non-GET, never touches a body, and answers `503`
+    in the API's error shape when the container is unreachable. Its tests are `cloudflare/test/`.
+  - The database is a managed Postgres 18 over direct TLS (`DB_SSL=true`). The three-node,
+    port-5433, repmgr description above is **Fly-only** and stops being true of production.
+  - `docs/handoff/CLOUDFLARE.md` is the architecture; `docs/handoff/CUTOVER_CLOUDFLARE.md` is
+    the runbook. `npm run deploy:cf:staging` then `npm run deploy:cf`.
 
 ---
 

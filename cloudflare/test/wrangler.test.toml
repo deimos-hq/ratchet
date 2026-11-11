@@ -1,0 +1,27 @@
+# Test-only. The same Worker and the same two Durable Object bindings as
+# ../wrangler.toml, without the container images (which need Docker to build).
+name = "ratchet-gate-test"
+main = "./harness.ts"
+compatibility_date = "2026-11-01"
+
+[[durable_objects.bindings]]
+name = "API"
+class_name = "ApiContainer"
+
+[[durable_objects.bindings]]
+name = "WORKER"
+class_name = "WorkerContainer"
+
+[exports.ApiContainer]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.WorkerContainer]
+type = "durable-object"
+storage = "sqlite"
+
+# Not credentials: placeholders, so the supervisor's "required secrets are set"
+# check passes under test. Nothing connects anywhere.
+[vars]
+DATABASE_URL = "test-only-not-a-database"
+AUTH_SECRET = "test-only-not-a-secret-0123456789abcdef"

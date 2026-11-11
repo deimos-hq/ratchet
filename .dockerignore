@@ -5,3 +5,7 @@ dist
 # never send local backups (database dumps, code bundles) or coverage output to the image builder
 backups
 coverage
+# the Cloudflare Worker and its tooling are not part of the image; the image is
+# built with the repository root as context, so without this its node_modules
+# would be sent to the builder on every deploy
+cloudflare

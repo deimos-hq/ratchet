@@ -56,7 +56,13 @@
     "verify:build": "bash scripts/verify-reproducible.sh",
     "licenses": "bash scripts/check-licenses.sh",
     "publish:registry": "bash scripts/publish-registry.sh",
-    "check:listing": "node scripts/listing-check.mjs"
+    "check:listing": "node scripts/listing-check.mjs",
+    "deploy:cf:staging": "bash scripts/deploy-cf.sh staging",
+    "deploy:cf": "bash scripts/deploy-cf.sh production",
+    "deploy:cf:force": "bash scripts/deploy-cf.sh force",
+    "backup:verify:r2": "bash scripts/backup-verify-r2.sh",
+    "parity": "node scripts/parity.mjs",
+    "test:edge": "npm --prefix cloudflare test"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
