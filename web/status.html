@@ -64,8 +64,16 @@
     <p>
       A status page served by the thing it reports on cannot tell you the thing is down.
       If Ratchet is unreachable, so is this. That is why it is not the only monitor:
-      an external service probes production on a schedule from outside our infrastructure,
-      and Fly's own health checks restart an unhealthy machine every 15 seconds.
+      an external service probes production on a schedule from outside our infrastructure.
+      <!-- STAGED FOR THE CLOUDFLARE CUTOVER: true of the Cloudflare deployment only.
+           CUTOVER-TODO: replace "about a minute" with the measured figure from the
+           restart drill in docs/handoff/CUTOVER_CLOUDFLARE.md §5. -->
+      Inside it, a supervisor checks both processes every minute and restarts either one if
+      it has stopped, and restarts it at once if it sees it exit. That is slower than the
+      15-second health check the previous host ran: a stopped process can stay stopped for
+      about a minute. While the API is down every request is answered <code>503</code> —
+      never a decision — and a lease that expires while the worker is down is still expired
+      correctly by the next <code>begin</code> for that key.
     </p>
     <p id="external-status"></p>
 

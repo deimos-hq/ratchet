@@ -221,16 +221,34 @@
       <a href="mailto:security@ratchetgate.com">security@ratchetgate.com</a>, the same address
       published in <a href="/.well-known/security.txt">security.txt</a>.
     </p>
-    <h2 style="margin-top:2rem">Nothing terminates TLS in front of the gate</h2>
+<!-- STAGED FOR THE CLOUDFLARE CUTOVER: this section is true of the Cloudflare
+         deployment only, and replaces "Nothing terminates TLS in front of the gate",
+         which stopped being true the day the hostname was proxied (11 Nov 2026). -->
+    <h2 style="margin-top:2rem" id="tls">Cloudflare terminates TLS in front of the gate</h2>
     <p class="dim">
-      Your connection to Ratchet ends at Ratchet. There is no reverse proxy, CDN or WAF in
-      the path decrypting your API key and your payload on the way through. That is a
-      deliberate choice with a real cost — we forgo the DDoS absorption and bot filtering a
-      proxy would give us — and we make it because a service that promises to store only a
-      fingerprint should not route the original past somebody else first.
+      This page used to say that nothing did: your connection ended at Ratchet, with no
+      proxy, CDN or WAF decrypting your API key and your payload on the way through. On
+      11 November 2026 this hostname was put behind Cloudflare, where the hosted service now
+      runs, and that stopped being true. Your connection now ends at Cloudflare's edge. Cloudflare's systems can see the
+      request in the clear — the <code>Authorization</code> header and the payload — before
+      it reaches our application, which runs in containers on the same network.
+    </p>
+    <p class="dim">
+      What has not changed: the payload is still hashed and discarded by the application and
+      only the fingerprint is stored; no request body or credential is written to a log, by
+      us or by a per-request platform log, which is switched off; and Ratchet still holds no
+      vendor credentials and performs no effect. What has changed is who you are trusting
+      with the request in transit. Before, it was us and our host. Now it is us and
+      Cloudflare, and Cloudflare is in a position our previous host was not: it holds the
+      TLS key for this hostname.
+    </p>
+    <p class="dim">
+      We said the old arrangement was "a claim almost no comparable service can make". We
+      can no longer make it. If your threat model needs it, run Ratchet yourself — the code
+      is open, and it runs anywhere a container and Postgres do.
     </p>
     <p class="small faint">
-      If that ever changes, this paragraph changes with it, before the architecture does.
+      The decision and its reasoning are recorded as D23 in the project's decision log.
     </p>
 
     <h2 style="margin-top:2rem">What you can check yourself</h2>

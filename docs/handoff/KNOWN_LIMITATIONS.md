@@ -136,6 +136,40 @@ workspace, pick one by hash, and sum on read. Standard, and does not disturb the
 
 ## 4. Three-node database with automatic failover — single region
 
+> **STAGED 11 Nov 2026 — this section stops describing production at the
+> Cloudflare cutover.** Everything below was measured on the Fly cluster
+> (`ratchet-gate-pg`, three nodes in `sjc`) and is true of that cluster only.
+> After the cutover the database is a managed Postgres 18 at a provider that
+> is **not chosen yet**, reached by direct TLS. Until that provider's own
+> behaviour has been tested here, **none of the following may be claimed about
+> production**, on the site or anywhere else:
+>
+> - three nodes, one per zone, or any node count;
+> - automatic failover, the quorum arithmetic, or the ~65 s failover outage —
+>   the 1 Sep drill was a drill of repmgr on Fly, not of the new provider;
+> - "both standbys stream at 0 bytes lag", `max_slot_wal_keep_size`, port 5433;
+> - `/workerz` reporting `replication: ok`. `EXPECTED_REPLICAS` is `0` on
+>   Cloudflare, so it reports `unobserved`, which is the truth: the application
+>   cannot see a managed provider's replicas, and on most it is not permitted to
+>   read `pg_stat_replication` at all.
+>
+> Whether production is single-node or highly available after the move is an
+> open owner decision (`CUTOVER_CLOUDFLARE.md` §0). If it is single-node, the
+> honest statement is: *one database node; a node failure is an outage until
+> the provider replaces it, and the last few seconds of commits can be lost.*
+> If it is HA, the provider's failover has to be drilled and timed before a
+> number is written down — the drill below is the template.
+>
+> What carries over unchanged: **single region** (still true, still a real
+> cost), **async replication loses unshipped commits** (true of any async
+> standby, whoever runs it), and the lesson that *a standby can be streaming and
+> still not hold your data* — which on a managed service becomes something you
+> can no longer check yourself, and is a reason to prefer a provider that
+> exposes replica lag.
+>
+> The rest of this section is kept as the record of what was built and tested
+> on Fly. Read it as history from the cutover date onward.
+
 *Updated 1 September 2026.* Three nodes in `sjc`, one per zone, so quorum
 survives losing any single zone:
 
@@ -287,6 +321,16 @@ do this. Deploy it as a container.
 encounters an expired lease, under the same row lock — so the system is *correct* without the
 worker, and the worker makes transitions timely and fires webhooks for effects nobody asks about
 again. Both paths are tested and produce identical results.
+
+**On Cloudflare (staged 11 Nov 2026) the platform does not keep it running for us.** A
+Cloudflare container can be stopped by a host restart at any time, and one whose Durable Object
+goes quiet is stopped after at most six hours. So the worker runs as a container under a
+supervisor that restarts it: at once when it sees it exit, within about a minute by alarm
+otherwise, and within about two by a cron backstop if the alarm itself is lost. Those figures are
+**expected, not measured** — no container has been deployed yet. During a gap, leases that expire
+are not swept and webhooks are not delivered; the mitigation above is what keeps that a delay and
+not a wrong answer. The worker's own watchdog still exits on a wedged loop, and the supervisor is
+what turns that exit into a restart. See [`CLOUDFLARE.md`](CLOUDFLARE.md) §4.
 
 ---
 

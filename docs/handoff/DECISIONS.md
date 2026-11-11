@@ -384,7 +384,87 @@ also asserted by test.
 
 ---
 
-## D23 — Cloudflare stays DNS-only. Nothing terminates TLS in front of the gate.
+## D23 — ~~Cloudflare stays DNS-only. Nothing terminates TLS in front of the gate.~~ REVERSED 11 Nov 2026
+
+**REVERSED 11 Nov 2026 by the owner's decision to host on Cloudflare.** The
+original decision is kept below, unedited, because the reasoning in it is still
+correct — it describes a cost, and the cost is now being paid.
+
+**What happened.** Fly.io refused deploys over an unpaid balance while `main`
+carried a dependency fix that production did not. The owner decided to move the
+hosted service to the Cloudflare account that hosts the company's other sites
+("Lets move ratchet to Cloudflare", 11 Nov 2026). The same day the hostname was
+attached to a Cloudflare Worker serving a fail-closed `503`, so from that moment
+Cloudflare has terminated TLS for `ratchetgate.com` — first in front of a
+maintenance page, and after the cutover in front of the gate itself.
+
+**This is not "what would change it" case 1, 2 or 3.** There was no volumetric
+attack, no traffic worth caching, no customer requiring a WAF. The trigger was
+operational: the host stopped accepting deploys. It is recorded as what it is
+so that nobody later reads the list below and concludes one of its conditions
+was met.
+
+**What it means for the trust boundary.** Stated in the same terms as the
+original, so the two can be compared line for line:
+
+- *Before:* TLS ended at Fly's edge proxy, operated by the host that also ran
+  the machines. One third party — the host — could see a request in cleartext,
+  and no additional party sat in front of it.
+- *After:* TLS ends at Cloudflare's edge. Cloudflare holds the certificate key
+  for the hostname and sees every `Authorization: Bearer rk_live_…` and every
+  payload in cleartext, then hands the request to a Worker and a container that
+  it also operates. It is still one third party — Cloudflare is now both the
+  proxy and the host — but it is a party that terminates TLS for a large share
+  of the internet, with WAF, bot-scoring and request-logging features that
+  act on cleartext traffic whenever they are switched on.
+- The sentence "a stranger's API keys and effect payloads pass through a
+  company we do not control" is now **true**, and "we would be obliged to say so
+  on the page where we currently say the opposite" is the obligation this
+  change discharges: `web/security.html` and `web/privacy.html` are rewritten
+  in the same pull request as the code.
+
+**What does not change.** The payload is hashed and discarded by the
+application; only the fingerprint is stored (CLAUDE.md §5.1). Ratchet holds no
+vendor credentials and performs no effect. Nothing about at-most-once, the lock
+order, or the receipt chain depends on who terminates TLS.
+
+**What has to be actively kept true, because the platform's defaults would
+break it:**
+
+1. *No platform request log.* Workers invocation logs are switched off in
+   `cloudflare/wrangler.toml` for both environments. With them on, Cloudflare
+   would record each request on a system that has never read CLAUDE.md §5.8.
+   `test/unit/cloudflare-config.test.ts` fails if the setting goes missing.
+2. *No edge feature that reads or rewrites bodies.* No WAF custom rules that
+   log payloads, no Logpush of request bodies, no HTML rewriting (Rocket Loader,
+   email obfuscation) that would alter pages under a strict CSP. These are zone
+   settings, not code; `docs/handoff/CUTOVER_CLOUDFLARE.md` §3 lists them.
+3. *No bot challenge.* The callers are agents. Bot Fight Mode — the thing the
+   original decision said "stays unavailable" — must now be deliberately left
+   off: an interstitial in front of `begin` is an outage for every client.
+4. *The client address.* Cloudflare appends to a client-supplied
+   `X-Forwarded-For`; the application trusts the leftmost entry. The front
+   Worker replaces the header with `CF-Connecting-IP`
+   (`cloudflare/src/front.ts`, tested).
+
+**The two permanent costs the original named** — a hop in front of a fast gate,
+and a second vendor whose outage becomes ours — resolve differently. The hop is
+real and unmeasured: every latency figure on the benchmark page was taken on
+Fly and must be re-measured before it is quoted again. The second vendor is no
+longer a second one: Fly is being removed, so the count of vendors whose outage
+is ours stays at one for hosting, plus the database provider, which is new.
+
+**Rejected, again:** *Split — `api.ratchetgate.com` direct, the site proxied.*
+There is no longer a non-Cloudflare origin to point a direct hostname at. If the
+claim "nothing terminates TLS in front of the gate" is ever wanted back, it
+means moving the API off Cloudflare, which is a hosting decision and not a DNS
+one. Self-hosting remains the answer for a user who needs it today.
+
+**The claim is withdrawn.** "No third party terminates TLS in front of the gate"
+was called "free to keep while it is true". It is no longer true and must not
+appear anywhere. `test/unit/cloudflare-config.test.ts` checks the pages.
+
+### The original decision (superseded, kept for the record)
 
 **Decided.** `ratchetgate.com` continues to resolve straight to Fly. Cloudflare
 provides DNS and inbound email routing and nothing else. The orange cloud stays
